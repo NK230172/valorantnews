@@ -11,8 +11,14 @@ interface Props {
 
 function tournamentBadge(name: string): { label: string; color: string } {
   const lower = name.toLowerCase();
-  if (lower.includes('vcj'))              return { label: 'VCJ', color: '#FF4655' };
-  if (lower.includes('vct'))              return { label: 'VCT', color: '#FF4655' };
+  if (lower.includes('game changers') && lower.includes('japan'))
+                                          return { label: 'VGCJ', color: '#FF4655' };
+  if (lower.includes('japan'))            return { label: 'VCJ', color: '#FF4655' };
+  if (lower.includes('game changers'))    return { label: 'VGC', color: '#C792EA' };
+  if (lower.includes('challengers'))      return { label: 'VCL', color: '#8B95A1' };
+  if (lower.includes('world cup'))        return { label: 'EWC', color: '#4FC3F7' };
+  if (lower.includes('vct') || lower.includes('champions tour'))
+                                          return { label: 'VCT', color: '#FF4655' };
   if (lower.includes('esports nations'))  return { label: 'ENC', color: '#4FC3F7' };
   return { label: name.slice(0, 6).toUpperCase(), color: '#8B95A1' };
 }

@@ -13,10 +13,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, content-type, apikey",
 };
 
-const TOURNAMENT_KEYWORDS: Record<string, string> = {
-  vct: "vct",
-  vcj: "vcj",
-  enc: "esports nations cup",
+// フィルタ → 大会名に含まれるキーワード（いずれか一致でヒット）
+const TOURNAMENT_KEYWORDS: Record<string, string[]> = {
+  vct: ["vct", "champions tour"],
+  vcj: ["japan"], // VCJ（Challengers Japan）/ GC Japan など日本の試合
+  enc: ["esports nations"],
 };
 
 async function rest(path: string): Promise<any[]> {
@@ -67,11 +68,12 @@ Deno.serve(async (req) => {
     }));
 
     if (tournamentFilter !== "all") {
-      const kw = TOURNAMENT_KEYWORDS[tournamentFilter.toLowerCase()];
-      if (kw) {
-        matches = matches.filter((m: any) =>
-          m.tournament?.toLowerCase().includes(kw)
-        );
+      const kws = TOURNAMENT_KEYWORDS[tournamentFilter.toLowerCase()];
+      if (kws) {
+        matches = matches.filter((m: any) => {
+          const t = (m.tournament ?? "").toLowerCase();
+          return kws.some((kw) => t.includes(kw));
+        });
       }
     }
 

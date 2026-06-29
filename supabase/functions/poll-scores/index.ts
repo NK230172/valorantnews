@@ -105,14 +105,15 @@ function parseMatchBlock(href: string, block: string): VlrMatch | null {
   const etaM = block.match(/class="ml-eta">\s*(.*?)\s*<\/div>/);
   const eta = etaM ? etaM[1].trim() : "";
 
+  // イベント枠は次の要素（match-item-icon）の直前まで。間に大会名テキストが入る。
   const eventBlockM = block.match(
-    /class="match-item-event text-of">([\s\S]*?)<\/div>\s*<\/div>/
+    /class="match-item-event text-of">([\s\S]*?)<div class="match-item-icon"/
   );
   let tournament_name = "";
   let event_series = "";
   if (eventBlockM) {
     const raw = eventBlockM[1];
-    const seriesM = raw.match(/class="match-item-event-series text-of">([\s\S]*?)<\/div>/);
+    const seriesM = raw.match(/class="match-item-event-series[^"]*">([\s\S]*?)<\/div>/);
     event_series = seriesM ? trimHtml(seriesM[1]) : "";
     const noSeries = raw.replace(/<div[^>]*match-item-event-series[^>]*>[\s\S]*?<\/div>/, "");
     tournament_name = trimHtml(noSeries);
@@ -132,7 +133,7 @@ async function fetchAllMatches(): Promise<VlrMatch[]> {
   if (!res.ok) throw new Error(`vlr.gg fetch failed: ${res.status}`);
   const html = await res.text();
   const matches: VlrMatch[] = [];
-  const blockRegex = /<a\s+href="(\/\d+\/[^"]+)"[^>]*class="[^"]*wf-module-item match-item[^"]*">([\s\S]*?)<\/a>\s*<\/div>/g;
+  const blockRegex = /<a\s+href="(\/\d+\/[^"]+)"[^>]*class="[^"]*wf-module-item match-item[^"]*"[^>]*>([\s\S]*?)<\/a>/g;
   let bm: RegExpExecArray | null;
   while ((bm = blockRegex.exec(html)) !== null) {
     const parsed = parseMatchBlock(bm[1], bm[2]);
