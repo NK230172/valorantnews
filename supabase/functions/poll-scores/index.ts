@@ -1,5 +1,51 @@
 // poll-scores: vlr.gg からスコアを取得して DB に反映
-// 全依存をインライン（Management API 経由で PostgREST バイパス）
+// 依存ゼロの単一ファイル（Management API デプロイは外部 import を解決できない）
+// DB アクセスは fetch で PostgREST を直接呼ぶ（service_role キーで RLS バイパス）
+
+const SB_URL = Deno.env.get("SUPABASE_URL")!;
+const SVC    = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// ── PostgREST ヘルパー ─────────────────────────────────────────
+async function restGet(path: string): Promise<any[]> {
+  const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
+    headers: { apikey: SVC, Authorization: `Bearer ${SVC}` },
+  });
+  if (!res.ok) { console.error(`GET ${path} -> ${res.status}: ${await res.text()}`); return []; }
+  return res.json();
+}
+
+async function restUpsert(table: string, rows: unknown[], onConflict: string): Promise<void> {
+  if ((rows as unknown[]).length === 0) return;
+  const res = await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${onConflict}`, {
+    method: "POST",
+    headers: {
+      apikey: SVC, Authorization: `Bearer ${SVC}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) console.error(`UPSERT ${table} -> ${res.status}: ${await res.text()}`);
+}
+
+async function restPatch(table: string, filter: string, patch: unknown): Promise<void> {
+  const res = await fetch(`${SB_URL}/rest/v1/${table}?${filter}`, {
+    method: "PATCH",
+    headers: {
+      apikey: SVC, Authorization: `Bearer ${SVC}`,
+      "Content-Type": "application/json", Prefer: "return=minimal",
+    },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) console.error(`PATCH ${table} -> ${res.status}: ${await res.text()}`);
+}
+
+async function restDelete(table: string, filter: string): Promise<void> {
+  await fetch(`${SB_URL}/rest/v1/${table}?${filter}`, {
+    method: "DELETE",
+    headers: { apikey: SVC, Authorization: `Bearer ${SVC}`, Prefer: "return=minimal" },
+  });
+}
 
 // ── VLR API ────────────────────────────────────────────────────
 const VLR_BASE = "https://www.vlr.gg";
@@ -7,17 +53,12 @@ const FETCH_HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; ValorantTracker/
 
 interface VlrMatch {
   match_id: string;
-  team1: string;
-  team2: string;
-  flag1: string;
-  flag2: string;
-  score1: number;
-  score2: number;
+  team1: string; team2: string;
+  flag1: string; flag2: string;
+  score1: number; score2: number;
   status: "live" | "upcoming" | "completed";
-  eta: string;
-  round_info: string;
-  tournament_name: string;
-  event_series: string;
+  eta: string; round_info: string;
+  tournament_name: string; event_series: string;
   match_page: string;
 }
 
@@ -105,13 +146,10 @@ function extractMatchId(matchPage: string): string {
   return m ? m[1] : matchPage.replace(/^\//, "").split("/")[0];
 }
 
-// VCT エコシステム全体（Challengers, Game Changers を含む）
-const TARGET_KEYWORDS = ["vct", "vcj", "challengers", "game changers", "esports nations", "valorant champions"];
-function isTargetTournament(_name: string): boolean {
-  return true; // すべての Valorant 大会を追跡
-}
+// すべての Valorant 大会を追跡（vlr.gg/matches に出る試合をそのまま保存）
+function isTargetTournament(_name: string): boolean { return true; }
 
-// ── Web Push ──────────────────────────────────────────────────
+// ── Web Push (VAPID) ──────────────────────────────────────────
 interface WebPushSub { endpoint: string; p256dh: string; auth: string; }
 interface VapidKeys { publicKey: string; privateKeyPkcs8: string; }
 
@@ -147,34 +185,24 @@ async function sendWebPush(sub: WebPushSub, keys: VapidKeys): Promise<void> {
     );
     const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, cryptoKey, new TextEncoder().encode(`${hdr}.${pay}`));
     const jwt = `${hdr}.${pay}.${b64urlEncode(sig)}`;
-    await fetch(sub.endpoint, {
+    const res = await fetch(sub.endpoint, {
       method: "POST",
       headers: { Authorization: `vapid t=${jwt},k=${keys.publicKey}`, TTL: "86400", "Content-Length": "0" },
     });
+    if (res.status === 404 || res.status === 410) {
+      await restDelete("push_subscriptions", `endpoint=eq.${encodeURIComponent(sub.endpoint)}`);
+    }
   } catch (e) {
     console.error("WebPush error:", e);
   }
 }
 
-// ── Management API SQL ─────────────────────────────────────────
-async function runSql(sql: string): Promise<any[]> {
-  const mgmtPat = Deno.env.get("MGMT_PAT")!;
-  const projectRef = Deno.env.get("PROJECT_REF")!;
-  const res = await fetch(
-    `https://api.supabase.com/v1/projects/${projectRef}/database/query`,
-    {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${mgmtPat}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ query: sql }),
-    },
-  );
-  if (!res.ok) { console.error(`SQL failed ${res.status}: ${await res.text()}`); return []; }
-  const data = await res.json();
-  if (data.message) { console.error("SQL error:", data.message); return []; }
-  return Array.isArray(data) ? data : [];
+async function broadcastWebPush(keys: VapidKeys): Promise<void> {
+  const subs = await restGet("push_subscriptions?select=endpoint,p256dh,auth");
+  if (subs.length > 0) {
+    await Promise.allSettled(subs.map((s: any) => sendWebPush(s as WebPushSub, keys)));
+  }
 }
-
-function esc(s: string): string { return (s ?? "").replace(/'/g, "''"); }
 
 // ── Main ──────────────────────────────────────────────────────
 Deno.serve(async (req) => {
@@ -183,21 +211,25 @@ Deno.serve(async (req) => {
   try {
     const vapidKeys = loadVapidKeys();
     const allMatches = await fetchAllMatches();
-    const liveMatches = allMatches.filter((m) => m.status === "live");
-    const targetLive = liveMatches.filter((m) => isTargetTournament(m.tournament_name));
+    const targetMatches = allMatches.filter((m) => isTargetTournament(m.tournament_name));
+    const targetLive = targetMatches.filter((m) => m.status === "live");
 
-    // スケジュール upsert
-    await upsertSchedule(allMatches.filter((m) => isTargetTournament(m.tournament_name)));
+    await upsertSchedule(targetMatches);
 
     let pushCount = 0;
+    let anyChanged = false;
     for (const match of targetLive) {
-      const changed = await processLiveMatch(match, extractMatchId(match.match_page), vapidKeys);
-      if (changed) pushCount++;
+      const changed = await processLiveMatch(match, extractMatchId(match.match_page));
+      if (changed) { pushCount++; anyChanged = true; }
     }
 
-    // 終了済み試合をマーク
     const liveIds = new Set(targetLive.map((m) => extractMatchId(m.match_page)));
-    await markCompleted(liveIds, vapidKeys);
+    const completedChanged = await markCompleted(liveIds);
+    if (completedChanged) anyChanged = true;
+
+    if (anyChanged && vapidKeys) {
+      await broadcastWebPush(vapidKeys);
+    }
 
     return new Response(
       JSON.stringify({ ok: true, live: targetLive.length, pushed: pushCount }),
@@ -211,58 +243,67 @@ Deno.serve(async (req) => {
   }
 });
 
-async function processLiveMatch(match: VlrMatch, matchId: string, vapidKeys: VapidKeys | null): Promise<boolean> {
-  const mid = esc(matchId);
-  const prev = (await runSql(`SELECT team1_score, team2_score, status FROM match_scores WHERE match_id = '${mid}'`))[0] ?? null;
-
-  const scoreChanged = !prev || prev.team1_score !== match.score1 || prev.team2_score !== match.score2 || prev.status !== "live";
-
-  const now = new Date().toISOString();
-  await runSql(
-    `INSERT INTO match_scores (match_id, tournament, team1_name, team2_name, team1_score, team2_score, status, round_info, updated_at)
-     VALUES ('${mid}','${esc(match.tournament_name)}','${esc(match.team1)}','${esc(match.team2)}',${match.score1},${match.score2},'live','${esc(match.round_info)}','${now}')
-     ON CONFLICT (match_id) DO UPDATE SET team1_score=EXCLUDED.team1_score, team2_score=EXCLUDED.team2_score, status='live', round_info=EXCLUDED.round_info, updated_at=EXCLUDED.updated_at`
+async function processLiveMatch(match: VlrMatch, matchId: string): Promise<boolean> {
+  const prevRows = await restGet(
+    `match_scores?select=team1_score,team2_score,status&match_id=eq.${encodeURIComponent(matchId)}&limit=1`,
   );
+  const prev = prevRows[0] ?? null;
 
-  if (!scoreChanged) return false;
+  const scoreChanged =
+    !prev ||
+    prev.team1_score !== match.score1 ||
+    prev.team2_score !== match.score2 ||
+    prev.status !== "live";
 
-  if (vapidKeys) {
-    const webSubs = await runSql(`SELECT endpoint, p256dh, auth FROM push_subscriptions`);
-    if (webSubs.length > 0) {
-      await Promise.allSettled(webSubs.map((s: any) => sendWebPush(s as WebPushSub, vapidKeys!)));
-    }
-  }
-  return true;
+  await restUpsert("match_scores", [{
+    match_id: matchId,
+    tournament: match.tournament_name,
+    team1_name: match.team1,
+    team2_name: match.team2,
+    team1_score: match.score1,
+    team2_score: match.score2,
+    status: "live",
+    round_info: match.round_info,
+    updated_at: new Date().toISOString(),
+  }], "match_id");
+
+  return scoreChanged;
 }
 
-async function markCompleted(currentLiveIds: Set<string>, vapidKeys: VapidKeys | null): Promise<void> {
-  const liveRows = await runSql(`SELECT match_id FROM match_scores WHERE status = 'live'`);
-  const now = new Date().toISOString();
-  let pushed = false;
+async function markCompleted(currentLiveIds: Set<string>): Promise<boolean> {
+  const liveRows = await restGet(`match_scores?select=match_id&status=eq.live`);
+  let changed = false;
   for (const row of liveRows) {
     if (currentLiveIds.has(row.match_id)) continue;
-    const mid = esc(row.match_id);
-    await runSql(`UPDATE match_scores SET status='completed', updated_at='${now}' WHERE match_id='${mid}'`);
-    if (vapidKeys && !pushed) {
-      const webSubs = await runSql(`SELECT endpoint, p256dh, auth FROM push_subscriptions`);
-      if (webSubs.length > 0) {
-        await Promise.allSettled(webSubs.map((s: any) => sendWebPush(s as WebPushSub, vapidKeys!)));
-        pushed = true;
-      }
-    }
+    await restPatch(
+      "match_scores",
+      `match_id=eq.${encodeURIComponent(row.match_id)}`,
+      { status: "completed", updated_at: new Date().toISOString() },
+    );
+    changed = true;
   }
+  return changed;
 }
 
 async function upsertSchedule(matches: VlrMatch[]): Promise<void> {
   if (matches.length === 0) return;
   const now = new Date().toISOString();
-  for (const m of matches) {
-    const mid = esc(extractMatchId(m.match_page));
-    const tour = esc(m.tournament_name || m.event_series || "");
-    await runSql(
-      `INSERT INTO match_schedule (match_id, tournament, event_name, team1_name, team2_name, team1_flag, team2_flag, match_time, status, match_page, cached_at)
-       VALUES ('${mid}','${tour}','${tour}','${esc(m.team1)}','${esc(m.team2)}','${esc(m.flag1)}','${esc(m.flag2)}',NULL,'${m.status}','${esc(m.match_page)}','${now}')
-       ON CONFLICT (match_id) DO UPDATE SET tournament=EXCLUDED.tournament, event_name=EXCLUDED.event_name, team1_name=EXCLUDED.team1_name, team2_name=EXCLUDED.team2_name, team1_flag=EXCLUDED.team1_flag, team2_flag=EXCLUDED.team2_flag, status=EXCLUDED.status, match_page=EXCLUDED.match_page, cached_at=EXCLUDED.cached_at`
-    );
-  }
+  const rows = matches.map((m) => {
+    const matchId = extractMatchId(m.match_page);
+    const tour = m.tournament_name || m.event_series || "";
+    return {
+      match_id: matchId,
+      tournament: tour,
+      event_name: tour,
+      team1_name: m.team1,
+      team2_name: m.team2,
+      team1_flag: m.flag1,
+      team2_flag: m.flag2,
+      match_time: null,
+      status: m.status,
+      match_page: m.match_page,
+      cached_at: now,
+    };
+  });
+  await restUpsert("match_schedule", rows, "match_id");
 }

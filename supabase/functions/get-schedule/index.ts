@@ -1,9 +1,16 @@
 // get-schedule Edge Function
-// PostgREST をバイパスして Management API の SQL エンドポイントを使用
+// 依存ゼロ（Management API デプロイは外部 import を解決できないため fetch で PostgREST を直接呼ぶ）
+//
+// GET /get-schedule?tournament=vct&status=upcoming
+//   tournament: vct | vcj | enc | all （省略時 all）
+//   status:     upcoming | live | completed | active | all （省略時 active = upcoming+live）
+
+const SB_URL = Deno.env.get("SUPABASE_URL")!;
+const SVC    = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type",
+  "Access-Control-Allow-Headers": "authorization, content-type, apikey",
 };
 
 const TOURNAMENT_KEYWORDS: Record<string, string> = {
@@ -12,30 +19,12 @@ const TOURNAMENT_KEYWORDS: Record<string, string> = {
   enc: "esports nations cup",
 };
 
-async function runSql(sql: string): Promise<any[]> {
-  const mgmtPat = Deno.env.get("MGMT_PAT")!;
-  const projectRef = Deno.env.get("PROJECT_REF")!;
-
-  const res = await fetch(
-    `https://api.supabase.com/v1/projects/${projectRef}/database/query`,
-    {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${mgmtPat}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query: sql }),
-    },
-  );
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`SQL query failed (${res.status}): ${txt}`);
-  }
-
-  const data = await res.json();
-  if (data.message) throw new Error(data.message);
-  return Array.isArray(data) ? data : [];
+async function rest(path: string): Promise<any[]> {
+  const res = await fetch(`${SB_URL}/rest/v1/${path}`, {
+    headers: { apikey: SVC, Authorization: `Bearer ${SVC}` },
+  });
+  if (!res.ok) throw new Error(`PostgREST ${res.status}: ${await res.text()}`);
+  return res.json();
 }
 
 Deno.serve(async (req) => {
@@ -49,29 +38,18 @@ Deno.serve(async (req) => {
     const tournamentFilter = url.searchParams.get("tournament") ?? "all";
     const statusFilter = url.searchParams.get("status") ?? "active";
 
-    // status フィルタ
-    let statusClause = "";
+    let statusQuery = "";
     if (statusFilter === "active") {
-      statusClause = "WHERE status IN ('upcoming','live')";
+      statusQuery = "&status=in.(upcoming,live)";
     } else if (statusFilter !== "all") {
-      statusClause = `WHERE status = '${statusFilter.replace(/'/g, "''")}'`;
+      statusQuery = `&status=eq.${encodeURIComponent(statusFilter)}`;
     }
 
-    const scheduleRows = await runSql(
-      `SELECT match_id, tournament, event_name, team1_name, team2_name,
-              team1_flag, team2_flag, match_time, status, match_page, cached_at
-       FROM match_schedule
-       ${statusClause}
-       ORDER BY match_time ASC NULLS LAST
-       LIMIT 100`,
+    const scheduleRows = await rest(
+      `match_schedule?select=*&order=match_time.asc.nullslast&limit=100${statusQuery}`,
     );
 
-    const liveRows = await runSql(
-      `SELECT match_id, team1_score, team2_score, round_info, status, updated_at
-       FROM match_scores
-       WHERE status = 'live'`,
-    );
-
+    const liveRows = await rest(`match_scores?select=*&status=eq.live`);
     const liveMap = new Map(liveRows.map((r: any) => [r.match_id, r]));
 
     let matches = scheduleRows.map((s: any) => ({
