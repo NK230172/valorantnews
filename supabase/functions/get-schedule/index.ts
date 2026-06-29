@@ -70,6 +70,13 @@ Deno.serve(async (req) => {
       liveScore: liveMap.get(s.match_id) ?? null,
     }));
 
+    // 対戦未定（TBD）の試合は除外
+    matches = matches.filter((m: any) => {
+      const t1 = (m.team1Name ?? "").trim().toUpperCase();
+      const t2 = (m.team2Name ?? "").trim().toUpperCase();
+      return t1 && t2 && t1 !== "TBD" && t2 !== "TBD";
+    });
+
     if (tournamentFilter !== "all") {
       const kws = TOURNAMENT_KEYWORDS[tournamentFilter.toLowerCase()];
       if (kws) {

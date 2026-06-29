@@ -27,10 +27,11 @@ function TeamColumn({ team, flag }: { team: MatchTeamDetail; flag?: string }) {
         {team.players.map((p, i) => (
           <div key={i} className="flex items-center gap-2 px-3 py-2">
             <div className="flex gap-0.5 shrink-0">
-              {p.agentImgs.length > 0 ? (
-                p.agentImgs.map((src, j) => (
+              {p.agents.length > 0 ? (
+                p.agents.map((slug, j) => (
+                  // プロキシ経由（vlrの直リンクは403になるため）
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img key={j} src={src} alt={p.agents[j]} title={p.agents[j]}
+                  <img key={j} src={`/api/agent/${slug}`} alt={slug} title={slug}
                        className="w-6 h-6 rounded-sm bg-val-bg" />
                 ))
               ) : (

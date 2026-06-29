@@ -93,6 +93,30 @@ export function toggleWatchlist(matchId: string): Set<string> {
   return new Set(wl);
 }
 
+// ── 日本時間（JST）フォーマット ─────────────────────────────
+// matchTime は UTC ISO 文字列。日本時間の「M/D HH:mm」で返す。
+export function formatJst(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  // 今日/明日（JST基準）の判定
+  const todayJst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+  const dJst = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+  const dayDiff = Math.floor(
+    (Date.UTC(dJst.getFullYear(), dJst.getMonth(), dJst.getDate()) -
+     Date.UTC(todayJst.getFullYear(), todayJst.getMonth(), todayJst.getDate())) / 86400000,
+  );
+  const time = `${get('hour')}:${get('minute')}`;
+  if (dayDiff === 0) return `今日 ${time}`;
+  if (dayDiff === 1) return `明日 ${time}`;
+  return `${get('month')}/${get('day')} ${time}`;
+}
+
 // ── 国旗絵文字 ─────────────────────────────────────────────
 export function flagEmoji(code: string): string {
   if (!code || code.length !== 2) return '';

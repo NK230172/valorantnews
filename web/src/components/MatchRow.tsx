@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Match, flagEmoji, LiveScore } from '@/lib/api';
+import { Match, flagEmoji, LiveScore, formatJst } from '@/lib/api';
 import MatchDetailModal from './MatchDetailModal';
 
 interface Props {
@@ -67,10 +67,17 @@ export default function MatchRow({ match, isWatched, liveOverride, onToggle }: P
                 <span className="text-val-muted text-xs">-</span>
                 <span>{score2}</span>
               </div>
-              <span className="text-[9px] font-bold text-val-red animate-pulse">LIVE</span>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold text-val-red animate-pulse">LIVE</span>
+                {live?.round_info && (
+                  <span className="text-[9px] text-val-muted">{live.round_info}</span>
+                )}
+              </div>
             </>
           ) : match.status === 'upcoming' ? (
-            <span className="text-xs text-val-muted">予定</span>
+            <span className="text-xs text-val-muted whitespace-nowrap">
+              {formatJst(match.matchTime) ?? '予定'}
+            </span>
           ) : (
             <div className="flex items-center gap-2 font-bold text-lg text-val-muted tabular-nums">
               <span>{score1}</span>

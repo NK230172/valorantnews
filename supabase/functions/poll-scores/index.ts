@@ -205,6 +205,38 @@ async function broadcastWebPush(keys: VapidKeys): Promise<void> {
   }
 }
 
+// ── 詳細ページ（時刻・現在マップ）─────────────────────────────
+const KNOWN_MAPS = ["Ascent","Bind","Haven","Split","Icebox","Breeze","Fracture","Pearl","Lotus","Sunset","Abyss","Corrode"];
+
+function isTBD(m: VlrMatch): boolean {
+  const t1 = (m.team1 ?? "").trim().toUpperCase();
+  const t2 = (m.team2 ?? "").trim().toUpperCase();
+  return t1 === "TBD" || t2 === "TBD" || t1 === "" || t2 === "";
+}
+
+// 試合詳細から UTC開始時刻 と 現在マップ名 を取得
+async function fetchDetailInfo(matchId: string): Promise<{ utc: string | null; currentMap: string | null }> {
+  try {
+    const res = await fetch(`${VLR_BASE}/${matchId}/`, { headers: FETCH_HEADERS });
+    if (!res.ok) return { utc: null, currentMap: null };
+    const html = await res.text();
+
+    let utc: string | null = null;
+    const tm = html.match(/data-utc-ts="(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})"/);
+    if (tm) utc = tm[1].replace(" ", "T") + "Z";
+
+    let currentMap: string | null = null;
+    const seg = html.match(
+      new RegExp(`class="vm-stats-game mod-active"[\\s\\S]*?\\b(${KNOWN_MAPS.join("|")})\\b`),
+    );
+    if (seg) currentMap = seg[1];
+
+    return { utc, currentMap };
+  } catch {
+    return { utc: null, currentMap: null };
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -212,15 +244,36 @@ Deno.serve(async (req) => {
   try {
     const vapidKeys = loadVapidKeys();
     const allMatches = await fetchAllMatches();
-    const targetMatches = allMatches.filter((m) => isTargetTournament(m.tournament_name));
+    // 対象大会 かつ 対戦が確定（TBDを除外）
+    const targetMatches = allMatches.filter((m) => isTargetTournament(m.tournament_name) && !isTBD(m));
     const targetLive = targetMatches.filter((m) => m.status === "live");
 
     await upsertSchedule(targetMatches);
 
+    // 開始時刻が未設定の試合（最大12件/回）を詳細から補完
+    const needTime = await restGet(
+      `match_schedule?select=match_id&match_time=is.null&status=eq.upcoming&limit=12`,
+    );
+    const liveIdSet = new Set(targetLive.map((m) => extractMatchId(m.match_page)));
+    for (const row of needTime) {
+      if (liveIdSet.has(row.match_id)) continue;
+      const info = await fetchDetailInfo(row.match_id);
+      if (info.utc) {
+        await restPatch("match_schedule", `match_id=eq.${encodeURIComponent(row.match_id)}`, { match_time: info.utc });
+      }
+    }
+
     let pushCount = 0;
     let anyChanged = false;
     for (const match of targetLive) {
-      const changed = await processLiveMatch(match, extractMatchId(match.match_page));
+      const matchId = extractMatchId(match.match_page);
+      // ライブは詳細から現在マップ名と開始時刻を取得
+      const info = await fetchDetailInfo(matchId);
+      if (info.currentMap) match.round_info = info.currentMap;
+      if (info.utc) {
+        await restPatch("match_schedule", `match_id=eq.${encodeURIComponent(matchId)}`, { match_time: info.utc });
+      }
+      const changed = await processLiveMatch(match, matchId);
       if (changed) { pushCount++; anyChanged = true; }
     }
 
@@ -300,7 +353,6 @@ async function upsertSchedule(matches: VlrMatch[]): Promise<void> {
       team2_name: m.team2,
       team1_flag: m.flag1,
       team2_flag: m.flag2,
-      match_time: null,
       status: m.status,
       match_page: m.match_page,
       cached_at: now,
