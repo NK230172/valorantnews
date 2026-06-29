@@ -22,8 +22,9 @@ export async function GET() {
     const supabase = createClient(url, key);
     const { data } = await supabase
       .from('match_scores')
-      .select('match_id, team1_name, team2_name, team1_score, team2_score')
-      .eq('status', 'live');
+      .select('match_id, tournament, team1_name, team2_name, team1_score, team2_score, round_info, updated_at')
+      .eq('status', 'live')
+      .order('updated_at', { ascending: false }); // 直近で動いた試合が先頭
 
     return NextResponse.json(
       { matches: data ?? [] },
