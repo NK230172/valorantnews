@@ -1,0 +1,17 @@
+# Node
+node_modules/
+.next/
+
+# Env files (secrets)
+.env
+.env.local
+.env*.local
+web/.env.local
+
+# Supabase local
+supabase/.temp/
+supabase/bin/
+
+# OS
+.DS_Store
+Thumbs.db
