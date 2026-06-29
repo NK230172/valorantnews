@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Match, LiveScore, fetchSchedule, getWatchlist, toggleWatchlist } from '@/lib/api';
+import { syncWatchToServer } from '@/lib/notifications';
 import MatchRow from '@/components/MatchRow';
 
 export default function WatchlistPage() {
@@ -54,8 +55,10 @@ export default function WatchlistPage() {
   }, [liveScores]);
 
   const handleToggle = (match: Match) => {
+    const willAdd = !watched.has(match.matchId);
     const next = toggleWatchlist(match.matchId);
     setWatched(next);
+    syncWatchToServer(match.matchId, willAdd);
     setMatches((prev) => prev.filter((m) => next.has(m.matchId)));
     window.dispatchEvent(new Event('storage'));
   };

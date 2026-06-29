@@ -214,26 +214,74 @@ function isTBD(m: VlrMatch): boolean {
   return t1 === "TBD" || t2 === "TBD" || t1 === "" || t2 === "";
 }
 
-// 試合詳細から UTC開始時刻 と 現在マップ名 を取得
-async function fetchDetailInfo(matchId: string): Promise<{ utc: string | null; currentMap: string | null }> {
+interface DetailInfo {
+  utc: string | null;
+  currentMap: string | null;
+  t1Rounds: number | null;
+  t2Rounds: number | null;
+}
+
+// 試合詳細から UTC開始時刻 / 現在マップ名 / 現在マップのラウンドスコア を取得
+async function fetchDetailInfo(matchId: string): Promise<DetailInfo> {
   try {
     const res = await fetch(`${VLR_BASE}/${matchId}/`, { headers: FETCH_HEADERS });
-    if (!res.ok) return { utc: null, currentMap: null };
+    if (!res.ok) return { utc: null, currentMap: null, t1Rounds: null, t2Rounds: null };
     const html = await res.text();
 
     let utc: string | null = null;
     const tm = html.match(/data-utc-ts="(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})"/);
     if (tm) utc = tm[1].replace(" ", "T") + "Z";
 
+    // mod-active（ライブ表示中のマップ）セクション
+    const startIdx = html.search(/class="vm-stats-game mod-active"[^>]*data-game-id="\d+"/);
     let currentMap: string | null = null;
-    const seg = html.match(
-      new RegExp(`class="vm-stats-game mod-active"[\\s\\S]*?\\b(${KNOWN_MAPS.join("|")})\\b`),
-    );
-    if (seg) currentMap = seg[1];
+    let t1Rounds: number | null = null;
+    let t2Rounds: number | null = null;
+    if (startIdx >= 0) {
+      const seg = html.slice(startIdx, startIdx + 2500);
+      const mapM = seg.match(new RegExp(`\\b(${KNOWN_MAPS.join("|")})\\b`));
+      if (mapM) currentMap = mapM[1];
+      // チームの現在マップ得点（先頭2つの class="score"）
+      const scores = [...seg.matchAll(/class="score[^"]*"[^>]*>\s*(\d+)\s*</g)].map((s) => parseInt(s[1]));
+      if (scores.length >= 2) { t1Rounds = scores[0]; t2Rounds = scores[1]; }
+    }
 
-    return { utc, currentMap };
+    return { utc, currentMap, t1Rounds, t2Rounds };
   } catch {
-    return { utc: null, currentMap: null };
+    return { utc: null, currentMap: null, t1Rounds: null, t2Rounds: null };
+  }
+}
+
+async function restInsert(table: string, rows: unknown[]): Promise<void> {
+  if (rows.length === 0) return;
+  const res = await fetch(`${SB_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      apikey: SVC, Authorization: `Bearer ${SVC}`,
+      "Content-Type": "application/json", Prefer: "return=minimal",
+    },
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) console.error(`INSERT ${table} -> ${res.status}: ${await res.text()}`);
+}
+
+// 指定試合をウォッチしている購読者にラウンド通知をキュー＋空プッシュ送信
+async function notifyRoundWinners(
+  matchId: string, teamWon: string, t1: number, t2: number, map: string,
+  vapidKeys: VapidKeys | null,
+): Promise<void> {
+  const watchers = await restGet(`web_watchlist?select=endpoint&match_id=eq.${encodeURIComponent(matchId)}`);
+  if (watchers.length === 0) return;
+  const endpoints = new Set(watchers.map((w: any) => w.endpoint));
+
+  const title = `🔴 ${teamWon} がラウンド奪取`;
+  const body = `${t1} - ${t2}　(${map})`;
+  await restInsert("push_queue", [...endpoints].map((ep) => ({ endpoint: ep, title, body })));
+
+  if (vapidKeys) {
+    const subs = await restGet(`push_subscriptions?select=endpoint,p256dh,auth`);
+    const targets = subs.filter((s: any) => endpoints.has(s.endpoint));
+    await Promise.allSettled(targets.map((s: any) => sendWebPush(s as WebPushSub, vapidKeys)));
   }
 }
 
@@ -267,23 +315,18 @@ Deno.serve(async (req) => {
     let anyChanged = false;
     for (const match of targetLive) {
       const matchId = extractMatchId(match.match_page);
-      // ライブは詳細から現在マップ名と開始時刻を取得
+      // ライブは詳細から現在マップ名・開始時刻・ラウンドスコアを取得
       const info = await fetchDetailInfo(matchId);
       if (info.currentMap) match.round_info = info.currentMap;
       if (info.utc) {
         await restPatch("match_schedule", `match_id=eq.${encodeURIComponent(matchId)}`, { match_time: info.utc });
       }
-      const changed = await processLiveMatch(match, matchId);
-      if (changed) { pushCount++; anyChanged = true; }
+      const changed = await processLiveMatch(match, matchId, info, vapidKeys);
+      if (changed) { pushCount++; }
     }
 
     const liveIds = new Set(targetLive.map((m) => extractMatchId(m.match_page)));
-    const completedChanged = await markCompleted(liveIds);
-    if (completedChanged) anyChanged = true;
-
-    if (anyChanged && vapidKeys) {
-      await broadcastWebPush(vapidKeys);
-    }
+    await markCompleted(liveIds);
 
     return new Response(
       JSON.stringify({ ok: true, live: targetLive.length, pushed: pushCount }),
@@ -297,11 +340,16 @@ Deno.serve(async (req) => {
   }
 });
 
-async function processLiveMatch(match: VlrMatch, matchId: string): Promise<boolean> {
+async function processLiveMatch(
+  match: VlrMatch, matchId: string, info: DetailInfo, vapidKeys: VapidKeys | null,
+): Promise<boolean> {
   const prevRows = await restGet(
-    `match_scores?select=team1_score,team2_score,status&match_id=eq.${encodeURIComponent(matchId)}&limit=1`,
+    `match_scores?select=team1_score,team2_score,status,t1_rounds,t2_rounds&match_id=eq.${encodeURIComponent(matchId)}&limit=1`,
   );
   const prev = prevRows[0] ?? null;
+
+  const t1 = info.t1Rounds ?? prev?.t1_rounds ?? 0;
+  const t2 = info.t2Rounds ?? prev?.t2_rounds ?? 0;
 
   const scoreChanged =
     !prev ||
@@ -318,8 +366,21 @@ async function processLiveMatch(match: VlrMatch, matchId: string): Promise<boole
     team2_score: match.score2,
     status: "live",
     round_info: match.round_info,
+    t1_rounds: t1,
+    t2_rounds: t2,
     updated_at: new Date().toISOString(),
   }], "match_id");
+
+  // ラウンド変化 → ウォッチャーに通知（マップ切替によるリセットは除外）
+  if (prev && info.t1Rounds !== null && info.t2Rounds !== null) {
+    const p1 = prev.t1_rounds ?? 0;
+    const p2 = prev.t2_rounds ?? 0;
+    const gained = (t1 + t2) - (p1 + p2);
+    if (gained > 0 && gained <= 4) {
+      const winner = (t1 - p1) >= (t2 - p2) ? match.team1 : match.team2;
+      await notifyRoundWinners(matchId, winner, t1, t2, match.round_info || "", vapidKeys);
+    }
+  }
 
   return scoreChanged;
 }

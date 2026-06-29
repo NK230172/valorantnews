@@ -69,6 +69,23 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── Web ウォッチリスト（プッシュ通知の対象試合）─────────────
+    if (path === "watch-web") {
+      const { endpoint, matchId } = await req.json();
+      if (!endpoint || !matchId) return json({ error: "endpoint / matchId が必要" }, 400);
+      if (req.method === "POST") {
+        await restUpsert("web_watchlist", { endpoint, match_id: matchId }, "endpoint,match_id");
+        return json({ ok: true });
+      }
+      if (req.method === "DELETE") {
+        await restDelete(
+          "web_watchlist",
+          `endpoint=eq.${encodeURIComponent(endpoint)}&match_id=eq.${encodeURIComponent(matchId)}`,
+        );
+        return json({ ok: true });
+      }
+    }
+
     // ── ウォッチリスト（iOS 用）─────────────────────────────────
     if (path === "watch") {
       if (req.method === "GET") {

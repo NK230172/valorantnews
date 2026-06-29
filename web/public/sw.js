@@ -7,8 +7,27 @@ function scoreLine(m) {
 }
 
 self.addEventListener('push', (event) => {
-  event.waitUntil(
-    fetch('/api/live', { cache: 'no-store' })
+  event.waitUntil((async () => {
+    // 1) 自分宛の保留通知（ウォッチ試合のラウンド速報など）を優先表示
+    try {
+      const sub = await self.registration.pushManager.getSubscription();
+      if (sub) {
+        const r = await fetch(`/api/pending?endpoint=${encodeURIComponent(sub.endpoint)}`, { cache: 'no-store' });
+        const { messages } = await r.json();
+        if (messages && messages.length > 0) {
+          for (const m of messages.slice(0, 5)) {
+            await self.registration.showNotification(m.title, {
+              body: m.body, icon: '/icon-192.png', badge: '/icon-192.png',
+              tag: 'val-round-' + Math.random().toString(36).slice(2), renotify: true,
+            });
+          }
+          return;
+        }
+      }
+    } catch (e) { /* フォールバックへ */ }
+
+    // 2) 保留が無ければライブスコア要約
+    return fetch('/api/live', { cache: 'no-store' })
       .then((r) => r.json())
       .then(({ matches }) => {
         if (!matches || matches.length === 0) {
@@ -41,8 +60,8 @@ self.addEventListener('push', (event) => {
           icon: '/icon-192.png',
           tag: 'val-live',
         })
-      )
-  );
+      );
+  })());
 });
 
 self.addEventListener('notificationclick', (event) => {

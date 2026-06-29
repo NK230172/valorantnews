@@ -6,6 +6,7 @@ import {
   Match, LiveScore, TournamentFilter, TOURNAMENT_LABELS,
   fetchSchedule, getWatchlist, toggleWatchlist,
 } from '@/lib/api';
+import { syncWatchToServer } from '@/lib/notifications';
 import MatchRow from '@/components/MatchRow';
 
 const FILTERS: TournamentFilter[] = [
@@ -62,8 +63,10 @@ export default function SchedulePage() {
   }, []);
 
   const handleToggle = (match: Match) => {
+    const willAdd = !watched.has(match.matchId);
     const next = toggleWatchlist(match.matchId);
     setWatched(next);
+    syncWatchToServer(match.matchId, willAdd); // 通知対象をサーバー同期
     // LiveBar が storage event を検知して更新
     window.dispatchEvent(new Event('storage'));
   };
