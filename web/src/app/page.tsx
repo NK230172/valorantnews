@@ -8,7 +8,9 @@ import {
 } from '@/lib/api';
 import MatchRow from '@/components/MatchRow';
 
-const FILTERS: TournamentFilter[] = ['all', 'vct', 'vcj', 'enc'];
+const FILTERS: TournamentFilter[] = [
+  'all', 'vct-amer', 'vct-emea', 'vct-pacific', 'vct-china', 'vcj',
+];
 
 export default function SchedulePage() {
   const [matches,   setMatches]   = useState<Match[]>([]);

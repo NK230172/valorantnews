@@ -13,11 +13,14 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, content-type, apikey",
 };
 
-// フィルタ → 大会名に含まれるキーワード（いずれか一致でヒット）
+// フィルタ → 大会名に含まれるべきキーワード（すべて含むとヒット = AND）
+// VCT 地域は "champions tour" + 地域名で Challengers と区別する
 const TOURNAMENT_KEYWORDS: Record<string, string[]> = {
-  vct: ["vct", "champions tour"],
+  "vct-amer": ["champions tour", "americas"],
+  "vct-emea": ["champions tour", "emea"],
+  "vct-pacific": ["champions tour", "pacific"],
+  "vct-china": ["champions tour", "china"],
   vcj: ["japan"], // VCJ（Challengers Japan）/ GC Japan など日本の試合
-  enc: ["esports nations"],
 };
 
 async function rest(path: string): Promise<any[]> {
@@ -72,7 +75,7 @@ Deno.serve(async (req) => {
       if (kws) {
         matches = matches.filter((m: any) => {
           const t = (m.tournament ?? "").toLowerCase();
-          return kws.some((kw) => t.includes(kw));
+          return kws.every((kw) => t.includes(kw)); // AND
         });
       }
     }

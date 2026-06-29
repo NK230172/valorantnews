@@ -1,10 +1,13 @@
-export type TournamentFilter = 'all' | 'vct' | 'vcj' | 'enc';
+export type TournamentFilter =
+  | 'all' | 'vct-amer' | 'vct-emea' | 'vct-pacific' | 'vct-china' | 'vcj';
 
 export const TOURNAMENT_LABELS: Record<TournamentFilter, string> = {
   all: 'すべて',
-  vct: 'VCT',
+  'vct-amer': 'VCT Americas',
+  'vct-emea': 'VCT EMEA',
+  'vct-pacific': 'VCT Pacific',
+  'vct-china': 'VCT China',
   vcj: 'VCJ',
-  enc: 'ENC',
 };
 
 export interface LiveScore {
@@ -46,6 +49,27 @@ export async function fetchSchedule(tournament: TournamentFilter = 'all'): Promi
   if (tournament !== 'all') path += `&tournament=${tournament}`;
   const data = await api<{ matches: Match[] }>(path);
   return data.matches ?? [];
+}
+
+// ── 試合詳細（ロスター・エージェント構成）──────────────────
+export interface MatchPlayer {
+  name: string;
+  agents: string[];
+  agentImgs: string[];
+}
+export interface MatchTeamDetail {
+  name: string;
+  players: MatchPlayer[];
+}
+export interface MatchDetail {
+  matchId: string;
+  status: string;
+  team1: MatchTeamDetail;
+  team2: MatchTeamDetail;
+}
+
+export async function fetchMatchDetail(matchId: string): Promise<MatchDetail> {
+  return api<MatchDetail>(`get-match?matchId=${matchId}`);
 }
 
 // ── ウォッチリスト (localStorage) ──────────────────────────

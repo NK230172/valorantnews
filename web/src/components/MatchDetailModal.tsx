@@ -1,0 +1,113 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { MatchDetail, MatchTeamDetail, fetchMatchDetail, flagEmoji } from '@/lib/api';
+
+interface Props {
+  matchId: string;
+  team1Name: string;
+  team2Name: string;
+  team1Flag?: string;
+  team2Flag?: string;
+  isLive: boolean;
+  onClose: () => void;
+}
+
+function TeamColumn({ team, flag }: { team: MatchTeamDetail; flag?: string }) {
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-val-border">
+        {flag && <span className="text-base">{flagEmoji(flag)}</span>}
+        <span className="text-sm font-bold text-val-text truncate">{team.name}</span>
+      </div>
+      <div className="divide-y divide-val-border/50">
+        {team.players.length === 0 && (
+          <div className="px-3 py-4 text-xs text-val-muted">ロスター未発表</div>
+        )}
+        {team.players.map((p, i) => (
+          <div key={i} className="flex items-center gap-2 px-3 py-2">
+            <div className="flex gap-0.5 shrink-0">
+              {p.agentImgs.length > 0 ? (
+                p.agentImgs.map((src, j) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={j} src={src} alt={p.agents[j]} title={p.agents[j]}
+                       className="w-6 h-6 rounded-sm bg-val-bg" />
+                ))
+              ) : (
+                <span className="w-6 h-6 rounded-sm bg-val-bg/60 inline-block" />
+              )}
+            </div>
+            <span className="text-sm text-val-text truncate">{p.name}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function MatchDetailModal({
+  matchId, team1Name, team2Name, team1Flag, team2Flag, isLive, onClose,
+}: Props) {
+  const [detail, setDetail] = useState<MatchDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetchMatchDetail(matchId)
+      .then((d) => { if (active) setDetail(d); })
+      .catch(() => { if (active) setError(true); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [matchId]);
+
+  // ライブ中は15秒ごとに更新（エージェント構成の反映）
+  useEffect(() => {
+    if (!isLive) return;
+    const t = setInterval(() => {
+      fetchMatchDetail(matchId).then((d) => setDetail(d)).catch(() => {});
+    }, 15000);
+    return () => clearInterval(t);
+  }, [matchId, isLive]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full sm:max-w-lg bg-val-card border-t sm:border border-val-border sm:rounded-xl max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* ヘッダ */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-val-border sticky top-0 bg-val-card">
+          <div className="flex items-center gap-2 text-sm font-semibold text-val-text">
+            {isLive && <span className="text-[9px] font-bold text-val-red animate-pulse">● LIVE</span>}
+            <span className="truncate">{team1Name} vs {team2Name}</span>
+          </div>
+          <button onClick={onClose} className="text-val-muted hover:text-val-text text-xl leading-none px-2">×</button>
+        </div>
+
+        {loading && (
+          <div className="flex justify-center py-12">
+            <div className="w-7 h-7 border-2 border-val-red border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+        {error && (
+          <div className="py-12 text-center text-sm text-val-muted">詳細を取得できませんでした</div>
+        )}
+        {detail && !loading && (
+          <>
+            <div className="flex divide-x divide-val-border">
+              <TeamColumn team={detail.team1} flag={team1Flag} />
+              <TeamColumn team={detail.team2} flag={team2Flag} />
+            </div>
+            <div className="px-4 py-2 text-[10px] text-val-muted text-center">
+              {isLive ? '15秒ごとに自動更新 ・ エージェント構成はマップ進行で変化します' : '予想ロスター（試合開始でエージェントが表示されます）'}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
