@@ -1,4 +1,4 @@
-'use client';
+// Web Push 購読登録（クライアントコンポーネントから呼ばれるユーティリティ）
 
 function urlBase64ToUint8Array(base64: string): ArrayBuffer {
   const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
