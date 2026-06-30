@@ -12,22 +12,28 @@ export default function WatchlistPage() {
   const [loading,  setLoading]  = useState(true);
   const liveScores = useState<Map<string, LiveScore>>(() => new Map())[0];
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const wl = getWatchlist();
     setWatched(wl);
-    if (wl.size === 0) { setMatches([]); setLoading(false); return; }
+    if (wl.size === 0) { setMatches([]); if (!silent) setLoading(false); return; }
     try {
       const all = await fetchSchedule();
       setMatches(all.filter((m) => wl.has(m.matchId)));
     } catch {
-      setMatches([]);
+      if (!silent) setMatches([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // 30秒ごとに静かに再取得
+  useEffect(() => {
+    const t = setInterval(() => load(true), 30000);
+    return () => clearInterval(t);
+  }, [load]);
 
   // Realtime スコア更新
   useEffect(() => {

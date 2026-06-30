@@ -21,21 +21,26 @@ export default function SchedulePage() {
   const [error,     setError]     = useState<string | null>(null);
   const liveMap = useRef<Map<string, LiveScore>>(new Map());
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) { setLoading(true); setError(null); }
     try {
       const data = await fetchSchedule(filter);
       setMatches(data);
     } catch {
-      setError('データの取得に失敗しました。再試行してください。');
+      if (!silent) setError('データの取得に失敗しました。再試行してください。');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
     setWatched(getWatchlist());
   }, [filter]);
 
   useEffect(() => { load(); }, [load]);
+
+  // 30秒ごとに静かに再取得（新規ライブの追加・終了試合の削除・マップ名反映）
+  useEffect(() => {
+    const t = setInterval(() => load(true), 30000);
+    return () => clearInterval(t);
+  }, [load]);
 
   // Supabase Realtime でスコアをリアルタイム反映
   useEffect(() => {
@@ -103,7 +108,7 @@ export default function SchedulePage() {
         <div className="flex flex-col items-center py-16 gap-3">
           <p className="text-val-muted text-sm">{error}</p>
           <button
-            onClick={load}
+            onClick={() => load()}
             className="px-4 py-2 text-sm font-semibold text-val-red border border-val-red rounded-lg"
           >
             再試行
