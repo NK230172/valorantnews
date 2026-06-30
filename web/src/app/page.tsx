@@ -89,7 +89,10 @@ export default function SchedulePage() {
   return (
     <>
       {/* 大会フィルタ + 更新ボタン */}
-      <div className="flex items-center bg-val-bg sticky top-[49px] z-30 border-b border-val-border">
+      <div
+        className="flex items-center bg-val-bg sticky z-30 border-b border-val-border"
+        style={{ top: 'calc(49px + env(safe-area-inset-top))' }}
+      >
         <div data-noswipe className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide flex-1">
           {FILTERS.map((f) => (
             <button

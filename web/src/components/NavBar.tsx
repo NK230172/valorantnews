@@ -12,7 +12,10 @@ export default function NavBar() {
   const path = usePathname();
 
   return (
-    <nav className="bg-val-card border-b border-val-border sticky top-0 z-40">
+    <nav
+      className="bg-val-card border-b border-val-border sticky top-0 z-40"
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}
+    >
       <div className="max-w-2xl mx-auto flex items-center">
         <span className="px-4 py-3 text-val-red font-black text-lg tracking-tight select-none">
           VAL
