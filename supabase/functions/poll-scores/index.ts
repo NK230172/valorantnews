@@ -390,11 +390,17 @@ async function markCompleted(currentLiveIds: Set<string>): Promise<boolean> {
   let changed = false;
   for (const row of liveRows) {
     if (currentLiveIds.has(row.match_id)) continue;
-    await restPatch(
-      "match_scores",
-      `match_id=eq.${encodeURIComponent(row.match_id)}`,
-      { status: "completed", updated_at: new Date().toISOString() },
-    );
+    const filter = `match_id=eq.${encodeURIComponent(row.match_id)}`;
+    await restPatch("match_scores", filter, { status: "completed", updated_at: new Date().toISOString() });
+    // schedule 側も完了に同期（幽霊ライブ防止）
+    await restPatch("match_schedule", filter, { status: "completed" });
+    changed = true;
+  }
+  // vlr 一覧から消えた幽霊ライブも schedule 上で完了に
+  const ghostLive = await restGet(`match_schedule?select=match_id&status=eq.live`);
+  for (const row of ghostLive) {
+    if (currentLiveIds.has(row.match_id)) continue;
+    await restPatch("match_schedule", `match_id=eq.${encodeURIComponent(row.match_id)}`, { status: "completed" });
     changed = true;
   }
   return changed;

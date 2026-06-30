@@ -56,19 +56,30 @@ Deno.serve(async (req) => {
     const liveRows = await rest(`match_scores?select=*&status=eq.live`);
     const liveMap = new Map(liveRows.map((r: any) => [r.match_id, r]));
 
-    let matches = scheduleRows.map((s: any) => ({
-      matchId: s.match_id,
-      tournament: s.tournament,
-      eventName: s.event_name,
-      team1Name: s.team1_name,
-      team2Name: s.team2_name,
-      team1Flag: s.team1_flag,
-      team2Flag: s.team2_flag,
-      matchTime: s.match_time,
-      status: s.status,
-      matchPage: s.match_page,
-      liveScore: liveMap.get(s.match_id) ?? null,
-    }));
+    let matches = scheduleRows.map((s: any) => {
+      const ls = liveMap.get(s.match_id);
+      // ライブ判定は match_scores を正とする。
+      // schedule が live でも match_scores に live が無ければ終了済み扱い（幽霊ライブ防止）
+      const status = ls ? "live" : (s.status === "live" ? "completed" : s.status);
+      return {
+        matchId: s.match_id,
+        tournament: s.tournament,
+        eventName: s.event_name,
+        team1Name: s.team1_name,
+        team2Name: s.team2_name,
+        team1Flag: s.team1_flag,
+        team2Flag: s.team2_flag,
+        matchTime: s.match_time,
+        status,
+        matchPage: s.match_page,
+        liveScore: ls ?? null,
+      };
+    });
+
+    // active フィルタ時は完了扱いになったものを除外
+    if (statusFilter === "active") {
+      matches = matches.filter((m: any) => m.status === "live" || m.status === "upcoming");
+    }
 
     // 対戦未定（TBD）の試合は除外
     matches = matches.filter((m: any) => {
