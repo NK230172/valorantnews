@@ -126,7 +126,13 @@ export default function MatchDetailModal({
               <TeamColumn team={detail.team2} flag={team2Flag} />
             </div>
             <div className="px-4 py-2 text-[10px] text-val-muted text-center">
-              {isLive ? '15秒ごとに自動更新 ・ エージェント構成はマップ進行で変化します' : '予想ロスター（試合開始でエージェントが表示されます）'}
+              {(() => {
+                const hasAgents = [...detail.team1.players, ...detail.team2.players]
+                  .some((p) => p.agents.length > 0);
+                if (isLive && !hasAgents) return 'ウォームアップ中 — 開始するとエージェント構成が表示されます（15秒ごとに自動更新）';
+                if (isLive) return '15秒ごとに自動更新 ・ エージェント構成はマップ進行で変化します';
+                return '予想ロスター（試合開始でエージェントが表示されます）';
+              })()}
             </div>
           </>
         )}

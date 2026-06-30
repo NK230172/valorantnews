@@ -69,10 +69,12 @@ export default function MatchRow({ match, isWatched, liveOverride, onToggle }: P
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-bold text-val-red animate-pulse">LIVE</span>
-                {/* 実マップ名のみ表示（"Map 1" 等の仮表示は出さない）*/}
-                {live?.round_info && !/^Map\s*\d+$/i.test(live.round_info) && (
-                  <span className="text-[9px] text-val-muted">{live.round_info}</span>
-                )}
+                {/* 実マップ名があれば表示、無ければ準備中（ウォームアップ/ピックバン）*/}
+                <span className="text-[9px] text-val-muted">
+                  {live?.round_info && !/^Map\s*\d+$/i.test(live.round_info)
+                    ? live.round_info
+                    : '準備中'}
+                </span>
               </div>
             </>
           ) : match.status === 'upcoming' ? (
