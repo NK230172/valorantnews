@@ -3,6 +3,7 @@ import './globals.css';
 import NavBar from '@/components/NavBar';
 import LiveBar from '@/components/LiveBar';
 import ServiceWorkerRegistrar from '@/components/ServiceWorkerRegistrar';
+import SwipeNav from '@/components/SwipeNav';
 
 export const metadata: Metadata = {
   title: 'VAL Tracker',
@@ -31,9 +32,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-val-bg text-val-text min-h-screen font-sans antialiased">
         <ServiceWorkerRegistrar />
         <NavBar />
-        <main className="max-w-2xl mx-auto pb-24">
-          {children}
-        </main>
+        <SwipeNav>
+          <main className="max-w-2xl mx-auto pb-24 min-h-[80vh]">
+            {children}
+          </main>
+        </SwipeNav>
         <LiveBar />
       </body>
     </html>

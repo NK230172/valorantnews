@@ -17,7 +17,7 @@ export default function NavBar() {
         <span className="px-4 py-3 text-val-red font-black text-lg tracking-tight select-none">
           VAL
         </span>
-        <div className="flex ml-2">
+        <div className="flex ml-2 flex-1">
           {TABS.map((t) => (
             <Link
               key={t.href}
@@ -32,6 +32,16 @@ export default function NavBar() {
             </Link>
           ))}
         </div>
+        {/* 設定（歯車）*/}
+        <Link
+          href="/settings"
+          aria-label="設定"
+          className={`px-4 py-3 text-lg transition-colors ${
+            path === '/settings' ? 'text-val-red' : 'text-val-muted hover:text-val-text'
+          }`}
+        >
+          ⚙
+        </Link>
       </div>
     </nav>
   );

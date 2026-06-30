@@ -99,6 +99,28 @@ export default function MatchDetailModal({
         )}
         {detail && !loading && (
           <>
+            {/* 配信リンク */}
+            {detail.streams && detail.streams.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-3 py-3 border-b border-val-border">
+                {detail.streams.map((s, i) => (
+                  <a
+                    key={i}
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-full ${
+                      s.type === 'youtube'
+                        ? 'bg-[#FF0000] text-white'
+                        : s.type === 'twitch'
+                        ? 'bg-[#9146FF] text-white'
+                        : 'bg-val-bg text-val-text'
+                    }`}
+                  >
+                    {s.type === 'youtube' ? '▶ YouTube' : s.type === 'twitch' ? '▶ Twitch' : '▶ 配信'}
+                  </a>
+                ))}
+              </div>
+            )}
             <div className="flex divide-x divide-val-border">
               <TeamColumn team={detail.team1} flag={team1Flag} />
               <TeamColumn team={detail.team2} flag={team2Flag} />

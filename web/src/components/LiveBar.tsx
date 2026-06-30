@@ -71,7 +71,7 @@ export default function LiveBar() {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-val-red/95 backdrop-blur-sm border-t border-red-400/30 shadow-2xl">
-      <div className="flex items-center overflow-x-auto scrollbar-hide gap-0 divide-x divide-red-400/30">
+      <div data-noswipe className="flex items-center overflow-x-auto scrollbar-hide gap-0 divide-x divide-red-400/30">
         <div className="shrink-0 px-3 py-2">
           <span className="text-[10px] font-bold text-white/80 uppercase tracking-widest">
             LIVE

@@ -18,8 +18,32 @@ function trim(s: string): string {
 
 interface Player { name: string; agents: string[]; agentImgs: string[]; }
 interface TeamDetail { name: string; players: Player[]; }
+interface Stream { url: string; type: string; }
 
-function parseMatch(html: string): { status: string; team1: TeamDetail; team2: TeamDetail } {
+function classifyStream(url: string): string {
+  if (/youtube\.com|youtu\.be/i.test(url)) return "youtube";
+  if (/twitch\.tv/i.test(url)) return "twitch";
+  return "other";
+}
+
+// 配信リンク（YouTube優先、なければTwitch等）を抽出
+function parseStreams(html: string): Stream[] {
+  const i = html.indexOf("match-streams-container");
+  const seg = i >= 0 ? html.slice(i, i + 3000) : "";
+  const urls = [...seg.matchAll(/href="(https?:\/\/[^"]+)"/g)].map((m) => m[1]);
+  const seen = new Set<string>();
+  const streams: Stream[] = [];
+  for (const u of urls) {
+    if (seen.has(u)) continue;
+    seen.add(u);
+    streams.push({ url: u, type: classifyStream(u) });
+  }
+  // YouTube を先頭に
+  streams.sort((a, b) => (a.type === "youtube" ? -1 : 0) - (b.type === "youtube" ? -1 : 0));
+  return streams;
+}
+
+function parseMatch(html: string): { status: string; team1: TeamDetail; team2: TeamDetail; streams: Stream[] } {
   // チーム名（ヘッダ）
   const teamNames = [...html.matchAll(/class="wf-title-med[^"]*"[^>]*>\s*([^<]+?)\s*</g)]
     .map((t) => trim(t[1])).filter(Boolean);
@@ -53,7 +77,8 @@ function parseMatch(html: string): { status: string; team1: TeamDetail; team2: T
   // 先頭5 = team1, 次5 = team2（vlr スコアボードの並び）
   const team1: TeamDetail = { name: teamNames[0] ?? "Team 1", players: players.slice(0, 5) };
   const team2: TeamDetail = { name: teamNames[1] ?? "Team 2", players: players.slice(5, 10) };
-  return { status, team1, team2 };
+  const streams = parseStreams(html);
+  return { status, team1, team2, streams };
 }
 
 Deno.serve(async (req) => {

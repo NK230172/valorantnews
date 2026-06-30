@@ -61,11 +61,16 @@ export interface MatchTeamDetail {
   name: string;
   players: MatchPlayer[];
 }
+export interface MatchStream {
+  url: string;
+  type: string; // youtube | twitch | other
+}
 export interface MatchDetail {
   matchId: string;
   status: string;
   team1: MatchTeamDetail;
   team2: MatchTeamDetail;
+  streams?: MatchStream[];
 }
 
 export async function fetchMatchDetail(matchId: string): Promise<MatchDetail> {
