@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MatchDetail, MatchTeamDetail, fetchMatchDetail, flagEmoji } from '@/lib/api';
+import { MatchDetail, MatchTeamDetail, fetchMatchDetail, flagEmoji, minutesSince } from '@/lib/api';
 
 interface Props {
   matchId: string;
@@ -10,6 +10,7 @@ interface Props {
   team1Flag?: string;
   team2Flag?: string;
   isLive: boolean;
+  matchTime?: string | null;
   onClose: () => void;
 }
 
@@ -47,7 +48,7 @@ function TeamColumn({ team, flag }: { team: MatchTeamDetail; flag?: string }) {
 }
 
 export default function MatchDetailModal({
-  matchId, team1Name, team2Name, team1Flag, team2Flag, isLive, onClose,
+  matchId, team1Name, team2Name, team1Flag, team2Flag, isLive, matchTime, onClose,
 }: Props) {
   const [detail, setDetail] = useState<MatchDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,6 +100,18 @@ export default function MatchDetailModal({
         )}
         {detail && !loading && (
           <>
+            {(() => {
+              const hasAgents = [...detail.team1.players, ...detail.team2.players]
+                .some((p) => p.agents.length > 0);
+              const elapsed = minutesSince(matchTime ?? null);
+              const dataUnavailable = isLive && !hasAgents && elapsed !== null && elapsed > 20;
+              if (!dataUnavailable) return null;
+              return (
+                <div className="mx-3 mt-3 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-xs">
+                  この大会はリアルタイム集計に対応していないため、マップ・ラウンド・エージェント構成は表示できません。配信でご確認ください。
+                </div>
+              );
+            })()}
             {/* 配信リンク */}
             {detail.streams && detail.streams.length > 0 && (
               <div className="flex flex-wrap gap-2 px-3 py-3 border-b border-val-border">
@@ -129,6 +142,9 @@ export default function MatchDetailModal({
               {(() => {
                 const hasAgents = [...detail.team1.players, ...detail.team2.players]
                   .some((p) => p.agents.length > 0);
+                const elapsed = minutesSince(matchTime ?? null);
+                const dataUnavailable = isLive && !hasAgents && elapsed !== null && elapsed > 20;
+                if (dataUnavailable) return null; // 上のバナーで案内済み
                 if (isLive && !hasAgents) return 'ウォームアップ中 — 開始するとエージェント構成が表示されます（15秒ごとに自動更新）';
                 if (isLive) return '15秒ごとに自動更新 ・ エージェント構成はマップ進行で変化します';
                 return '予想ロスター（試合開始でエージェントが表示されます）';

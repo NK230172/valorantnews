@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Match, flagEmoji, LiveScore, formatJst } from '@/lib/api';
+import { Match, flagEmoji, LiveScore, formatJst, minutesSince } from '@/lib/api';
 import MatchDetailModal from './MatchDetailModal';
 
 interface Props {
@@ -33,6 +33,13 @@ export default function MatchRow({ match, isWatched, liveOverride, onToggle }: P
 
   const score1 = live?.team1_score ?? 0;
   const score2 = live?.team2_score ?? 0;
+
+  // ライブなのにマップ/ラウンドデータが無い状態が、開始予定時刻から20分以上続く場合は
+  // 「データ取得不可」（大会がリアルタイム集計の対象外）と判断する
+  const hasMapData = !!(live?.round_info && !/^Map\s*\d+$/i.test(live.round_info));
+  const elapsed = minutesSince(match.matchTime);
+  const dataUnavailable = isLive && !hasMapData && elapsed !== null && elapsed > 20;
+  const liveLabel = hasMapData ? live!.round_info : (dataUnavailable ? 'データ取得不可' : '準備中');
 
   return (
     <div className="flex items-center gap-3 px-4 py-3 bg-val-card border-b border-val-border">
@@ -69,11 +76,8 @@ export default function MatchRow({ match, isWatched, liveOverride, onToggle }: P
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-bold text-val-red animate-pulse">LIVE</span>
-                {/* 実マップ名があれば表示、無ければ準備中（ウォームアップ/ピックバン）*/}
-                <span className="text-[9px] text-val-muted">
-                  {live?.round_info && !/^Map\s*\d+$/i.test(live.round_info)
-                    ? live.round_info
-                    : '準備中'}
+                <span className={`text-[9px] ${dataUnavailable ? 'text-yellow-500' : 'text-val-muted'}`}>
+                  {liveLabel}
                 </span>
               </div>
             </>
@@ -117,6 +121,7 @@ export default function MatchRow({ match, isWatched, liveOverride, onToggle }: P
           team1Flag={match.team1Flag}
           team2Flag={match.team2Flag}
           isLive={isLive}
+          matchTime={match.matchTime}
           onClose={() => setShowDetail(false)}
         />
       )}

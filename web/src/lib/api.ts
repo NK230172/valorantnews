@@ -122,6 +122,14 @@ export function formatJst(iso: string | null): string | null {
   return `${get('month')}/${get('day')} ${time}`;
 }
 
+// 試合開始予定時刻からの経過分数（無ければ null）
+export function minutesSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return (Date.now() - d.getTime()) / 60000;
+}
+
 // ── 国旗絵文字 ─────────────────────────────────────────────
 export function flagEmoji(code: string): string {
   if (!code || code.length !== 2) return '';
