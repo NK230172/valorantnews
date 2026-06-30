@@ -18,6 +18,7 @@ export default function SchedulePage() {
   const [filter,    setFilter]    = useState<TournamentFilter>('all');
   const [watched,   setWatched]   = useState<Set<string>>(new Set());
   const [loading,   setLoading]   = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error,     setError]     = useState<string | null>(null);
   const liveMap = useRef<Map<string, LiveScore>>(new Map());
 
@@ -79,23 +80,39 @@ export default function SchedulePage() {
   const live     = matches.filter((m) => m.status === 'live');
   const upcoming = matches.filter((m) => m.status === 'upcoming');
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await load(true);
+    setRefreshing(false);
+  };
+
   return (
     <>
-      {/* 大会フィルタ */}
-      <div className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide bg-val-bg sticky top-[49px] z-30 border-b border-val-border">
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-4 py-1.5 rounded-full text-sm font-semibold shrink-0 transition-colors ${
-              filter === f
-                ? 'bg-val-red text-white'
-                : 'bg-val-card text-val-muted hover:text-val-text'
-            }`}
-          >
-            {TOURNAMENT_LABELS[f]}
-          </button>
-        ))}
+      {/* 大会フィルタ + 更新ボタン */}
+      <div className="flex items-center bg-val-bg sticky top-[49px] z-30 border-b border-val-border">
+        <div className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide flex-1">
+          {FILTERS.map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-4 py-1.5 rounded-full text-sm font-semibold shrink-0 transition-colors ${
+                filter === f
+                  ? 'bg-val-red text-white'
+                  : 'bg-val-card text-val-muted hover:text-val-text'
+              }`}
+            >
+              {TOURNAMENT_LABELS[f]}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          aria-label="更新"
+          className="shrink-0 px-4 py-3 text-val-muted hover:text-val-text border-l border-val-border"
+        >
+          <span className={`inline-block text-lg leading-none ${refreshing ? 'animate-spin' : ''}`}>↻</span>
+        </button>
       </div>
 
       {loading && (

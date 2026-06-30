@@ -10,6 +10,7 @@ export default function WatchlistPage() {
   const [matches,  setMatches]  = useState<Match[]>([]);
   const [watched,  setWatched]  = useState<Set<string>>(new Set());
   const [loading,  setLoading]  = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const liveScores = useState<Map<string, LiveScore>>(() => new Map())[0];
 
   const load = useCallback(async (silent = false) => {
@@ -69,6 +70,12 @@ export default function WatchlistPage() {
     window.dispatchEvent(new Event('storage'));
   };
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await load(true);
+    setRefreshing(false);
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-16">
@@ -88,10 +95,18 @@ export default function WatchlistPage() {
 
   return (
     <>
-      <div className="px-4 pt-4 pb-2">
+      <div className="flex items-center justify-between px-4 pt-4 pb-2">
         <span className="text-xs font-bold text-val-muted tracking-widest uppercase">
           ウォッチ中 ({watched.size})
         </span>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          aria-label="更新"
+          className="text-val-muted hover:text-val-text"
+        >
+          <span className={`inline-block text-lg leading-none ${refreshing ? 'animate-spin' : ''}`}>↻</span>
+        </button>
       </div>
       {matches.map((m) => (
         <MatchRow
